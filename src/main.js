@@ -79,7 +79,7 @@ function updateTargetFromTilt(beta, gamma) {
   const dGamma = gamma - gamma0; // left-right tilt delta
 
   // map physical tilt to camera rotation, clamp, convert to radians
-  const pitchDeg = THREE.MathUtils.clamp((-dBeta / pitchTiltRangeDeg) * maxPitchDeg, -maxPitchDeg, maxPitchDeg);
+  const pitchDeg = THREE.MathUtils.clamp((dBeta / pitchTiltRangeDeg) * maxPitchDeg, -maxPitchDeg, maxPitchDeg);
   const yawDeg   = THREE.MathUtils.clamp((dGamma / yawTiltRangeDeg) * maxYawDeg, -maxYawDeg, maxYawDeg);
   const pitch = THREE.MathUtils.degToRad(pitchDeg);
   const yaw   = THREE.MathUtils.degToRad(yawDeg);
