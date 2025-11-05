@@ -59,8 +59,8 @@ let targetQuat = baseQuat.clone();
 // Gyro → camera rotation config
 const gyroConfig = {
   // Max camera rotation (clamps)
-  maxPitchDeg: 10,   // up/down (X)
-  maxYawDeg: 15,     // left/right (Y)
+  maxPitchDeg: 2,   // up/down (X)
+  maxYawDeg: 5,     // left/right (Y)
   // How much physical tilt maps to the max camera rotation
   pitchTiltRangeDeg: 30, // Δbeta needed to hit maxPitchDeg
   yawTiltRangeDeg: 30,   // Δgamma needed to hit maxYawDeg
@@ -183,7 +183,8 @@ loader.load(
         obj.receiveShadow = true;
       }
     });
-    root.position.set(0, 0, 0.3);
+    root.scale.set(1.5, 1.5, 1.5);
+    root.position.set(0, 0, 0.5);
     scene.add(root);
   },
   undefined,
