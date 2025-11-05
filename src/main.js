@@ -49,8 +49,8 @@ function onMotion(e) {
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111);
 
-const camera = new THREE.PerspectiveCamera(20, innerWidth / innerHeight, 0.1, 1000);
-camera.position.set(0, 0, 14);
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 5);
 
 // keep this as the NEUTRAL camera orientation (phone upright)
 const baseQuat = camera.quaternion.clone();
