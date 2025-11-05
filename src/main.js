@@ -49,8 +49,8 @@ function onMotion(e) {
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111);
 
-const camera = new THREE.PerspectiveCamera(120, innerWidth / innerHeight, 0.1, 1000);
-camera.position.set(0, 0, 3);
+const camera = new THREE.PerspectiveCamera(20, innerWidth / innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 14);
 
 // keep this as the NEUTRAL camera orientation (phone upright)
 const baseQuat = camera.quaternion.clone();
@@ -59,8 +59,8 @@ let targetQuat = baseQuat.clone();
 // Gyro → camera rotation config
 const gyroConfig = {
   // Max camera rotation (clamps)
-  maxPitchDeg: 5,   // up/down (X)
-  maxYawDeg: 5,     // left/right (Y)
+  maxPitchDeg: 10,   // up/down (X)
+  maxYawDeg: 10,     // left/right (Y)
   // How much physical tilt maps to the max camera rotation
   pitchTiltRangeDeg: 30, // Δbeta needed to hit maxPitchDeg
   yawTiltRangeDeg: 30,   // Δgamma needed to hit maxYawDeg
