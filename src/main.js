@@ -59,7 +59,7 @@ let targetQuat = baseQuat.clone();
 // Gyro → camera rotation config
 const gyroConfig = {
   // Max camera rotation (clamps)
-  maxPitchDeg: 2,   // up/down (X)
+  maxPitchDeg: 5,   // up/down (X)
   maxYawDeg: 5,     // left/right (Y)
   // How much physical tilt maps to the max camera rotation
   pitchTiltRangeDeg: 30, // Δbeta needed to hit maxPitchDeg
