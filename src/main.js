@@ -1,6 +1,6 @@
 // main.js (type="module")
 import * as THREE from 'three';
-// import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'; // no longer needed
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // -------------------- Gyro overlay & permissions --------------------
 const overlayEl = document.getElementById('sensorOverlay');
@@ -18,6 +18,7 @@ const data = {
 
 const fmt = (v, d = 2) => (v === null || v === undefined ? '—' : Number(v).toFixed(d));
 
+
 function onMotion(e) {
   const a  = e.acceleration || {};
   const ag = e.accelerationIncludingGravity || {};
@@ -26,6 +27,7 @@ function onMotion(e) {
   data.motion.accG.x = ag.x; data.motion.accG.y = ag.y; data.motion.accG.z = ag.z;
   data.motion.rot.alpha = rr.alpha; data.motion.rot.beta = rr.beta; data.motion.rot.gamma = rr.gamma;
   data.motion.interval  = e.interval;
+ 
 }
 
 // -------------------- Three.js scene --------------------
@@ -35,39 +37,43 @@ scene.background = new THREE.Color(0x111111);
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
 // original camera pose (keep this as base)
 camera.position.set(0, 0, -2.2);
+// look at origin once to define the "original" camera orientation
 camera.lookAt(0, 0, 0);
-const baseQuat   = camera.quaternion.clone();
-let   targetQuat = baseQuat.clone();
+const baseQuat   = camera.quaternion.clone();   // store original
+let   targetQuat = baseQuat.clone();            // slerp target
 
 // Gyro → camera rotation mapping (X/Y only, relative to baseQuat)
 const gyroConfig = {
-  maxPitchDeg:  8,
-  maxYawDeg:    8,
-  pitchTiltRangeDeg: 20,
-  yawTiltRangeDeg:   20,
-  smoothing: 0.12
+  maxPitchDeg:  8,   // camera X rotation clamp
+  maxYawDeg:    8,  // camera Y rotation clamp
+  pitchTiltRangeDeg: 20, // device beta delta to hit maxPitchDeg
+  yawTiltRangeDeg:   20, // device gamma delta to hit maxYawDeg
+  smoothing: 0.12         // slerp factor per frame (0..1)
 };
 
 let haveBaseline = false;
-let beta0 = 0;
-let gamma0 = 0;
+let beta0 = 0;  // neutral beta
+let gamma0 = 0; // neutral gamma
 
 function updateTargetFromTilt(beta, gamma) {
   const { maxPitchDeg, maxYawDeg, pitchTiltRangeDeg, yawTiltRangeDeg } = gyroConfig;
-  const dBeta  = beta  - beta0;
-  const dGamma = gamma - gamma0;
 
+  const dBeta  = beta  - beta0;  // front/back tilt delta
+  const dGamma = gamma - gamma0; // left/right tilt delta
+
+  // Invert both pitch and yaw directions
   const pitchDeg = -THREE.MathUtils.clamp((dBeta  / pitchTiltRangeDeg) * maxPitchDeg, -maxPitchDeg, maxPitchDeg);
   const yawDeg   = -THREE.MathUtils.clamp((dGamma / yawTiltRangeDeg)   * maxYawDeg,   -maxYawDeg,   maxYawDeg);
 
   const pitch = THREE.MathUtils.degToRad(pitchDeg);
   const yaw   = THREE.MathUtils.degToRad(yawDeg);
 
-  const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
-  const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+  const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -pitch);
+  const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
 
   targetQuat.copy(baseQuat).multiply(qy).multiply(qx);
 }
+
 
 function onOrientation(e) {
   data.orientation.alpha = e.alpha;
@@ -76,6 +82,7 @@ function onOrientation(e) {
   data.orientation.absolute = e.absolute;
 
   if (!haveBaseline && e.beta != null && e.gamma != null) {
+    // capture neutral offsets when device first reports (user's current hold = "center")
     beta0  = e.beta;
     gamma0 = e.gamma;
     haveBaseline = true;
@@ -83,6 +90,7 @@ function onOrientation(e) {
   if (haveBaseline) {
     updateTargetFromTilt(e.beta ?? 0, e.gamma ?? 0);
   }
+ 
 }
 
 // iOS 13+ permissions
@@ -138,22 +146,27 @@ document.body.appendChild(renderer.domElement);
 function isFullscreen() {
   return document.fullscreenElement || document.webkitFullscreenElement;
 }
+
 async function requestFs(el) {
   try {
     if (el.requestFullscreen) return await el.requestFullscreen();
     if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen(); // Safari
   } catch (e) { console.warn('Fullscreen request failed:', e); }
 }
+
 async function exitFs() {
   try {
     if (document.exitFullscreen) return await document.exitFullscreen();
     if (document.webkitExitFullscreen) return document.webkitExitFullscreen(); // Safari
   } catch (e) { console.warn('Exit fullscreen failed:', e); }
 }
+
 async function toggleFullscreen() {
   if (isFullscreen()) await exitFs();
-  else await requestFs(document.documentElement);
+  else await requestFs(document.documentElement); // go fullscreen on entire page
 }
+
+// Mobile: double-tap (within 300ms)
 let _lastTap = 0;
 renderer.domElement.addEventListener('touchend', (e) => {
   const now = Date.now();
@@ -163,16 +176,19 @@ renderer.domElement.addEventListener('touchend', (e) => {
   }
   _lastTap = now;
 }, { passive: true });
-renderer.domElement.addEventListener('dblclick', () => toggleFullscreen());
 
-// -------------------- Scene objects --------------------
+// Desktop: double-click
+renderer.domElement.addEventListener('dblclick', (e) => {
+  toggleFullscreen();
+});
+
+
+// -------------------- Your scene objects (unchanged except controls removed) --------------------
 
 // Cloth "screen"
 const screenWidth = 0.8;
 const screenHeight = 1.2;
 const screenGeo = new THREE.PlaneGeometry(screenWidth, screenHeight);
-
-// Temporary material; gets replaced by portal texture below.
 const screenMat = new THREE.MeshPhysicalMaterial({
   color: 0xffffff,
   roughness: 0.95,
@@ -212,9 +228,12 @@ flame.target = flameTarget;
 lightGroup.add(flame);
 scene.add(lightGroup);
 
-// --- Quad spotlights (UP / DOWN / LEFT / RIGHT) ---
+// --- Quad spotlights (UP / DOWN / LEFT / RIGHT) cloned from an existing SpotLight ---
 function createQuadSpotsFrom(baseSpot, offset = 0.6) {
   const group = new THREE.Group();
+  // anchor at the same place as the base spot
+
+  // Helper: make a new spot that copies key settings from baseSpot
   const makeSpot = () => {
     const s = new THREE.SpotLight(
       baseSpot.color.clone(),
@@ -224,42 +243,63 @@ function createQuadSpotsFrom(baseSpot, offset = 0.6) {
       baseSpot.penumbra,
       baseSpot.decay
     );
+    // s.castShadow = true;
+    // s.shadow.mapSize.copy(baseSpot.shadow.mapSize);
+    // s.shadow.bias = baseSpot.shadow.bias;
+    // s.shadow.normalBias = baseSpot.shadow.normalBias;
+    // s.shadow.camera.near = baseSpot.shadow.camera.near;
+    // s.shadow.camera.far = baseSpot.shadow.camera.far;
+    // s.shadow.camera.fov = baseSpot.shadow.camera.fov;
+    // s.shadow.camera.updateProjectionMatrix();
     return s;
   };
+
+  // Build 4 targets (local to the group) and 4 spots
   const dirs = {
     up:    new THREE.Vector3(0,  1, 0),
     down:  new THREE.Vector3(0, -1, 0),
     right: new THREE.Vector3(1,  0, 0),
     left:  new THREE.Vector3(-1, 0, 0),
   };
+
   const targets = {};
   Object.entries(dirs).forEach(([name, v]) => {
     const t = new THREE.Object3D();
-    t.position.copy(v).multiplyScalar(offset);
+    t.position.copy(v).multiplyScalar(offset); // local offset
     group.add(t);
     targets[name] = t;
   });
+
   const upSpot    = makeSpot();
   const downSpot  = makeSpot();
   const leftSpot  = makeSpot();
   const rightSpot = makeSpot();
+
+  // All spots originate at group's origin (which sits at baseSpot.position)
   upSpot.position.set(0, 0, 0);
   downSpot.position.set(0, 0, 0);
   leftSpot.position.set(0, 0, 0);
   rightSpot.position.set(0, 0, 0);
+
   upSpot.target    = targets.up;
   downSpot.target  = targets.down;
   leftSpot.target  = targets.left;
   rightSpot.target = targets.right;
+
   group.add(upSpot, downSpot, leftSpot, rightSpot);
+
+  // Convenience for external access/tweaks if you want
   group.userData = { upSpot, downSpot, leftSpot, rightSpot, targets };
   group.position.set(0, 0, -0.6);
   return group;
 }
+
+// ----- Usage (add to the same parent you use for `flame`, e.g., lightGroup) -----
 const quadSpots = createQuadSpotsFrom(flame, /* offset */ 0.8);
 scene.add(quadSpots);
 
-// Motion constraints
+
+// Motion constraints (unchanged)
 const constraints = {
   baseZ: -0.9,
   zMin: -1.18,
@@ -283,84 +323,56 @@ const constraints = {
 const easeInOutSine = (u) => 0.5 - 0.5 * Math.cos(Math.PI * u);
 const randRange = (a, b) => a + Math.random() * (b - a);
 
-// -------------------- PORTAL SETUP (replaces GLTF box) --------------------
-const portalTarget = new THREE.WebGLRenderTarget(1024, 1024, { depthBuffer: true });
-portalTarget.texture.colorSpace = THREE.SRGBColorSpace;
-
-const portalScene = new THREE.Scene();
-portalScene.background = new THREE.Color(0x000000);
-portalScene.fog = new THREE.Fog(0x000000, 0.1, 6.0);
-
-// Camera we will customize each frame with a custom frustum
-const portalCam = new THREE.PerspectiveCamera(45, 1, camera.near, 10);
-
-// Inside-out room (big box) and some “blobs”
-const room = new THREE.Mesh(
-  new THREE.BoxGeometry(6, 6, 6),
-  new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 1, metalness: 0, side: THREE.BackSide })
+// Load GLB
+const gltfLoader = new GLTFLoader();
+gltfLoader.load(
+  '/models/scene.glb',
+  (gltf) => {
+    const root = gltf.scene || gltf.scenes[0];
+    root.traverse((obj) => {
+      if (obj.isMesh || obj.isSkinnedMesh || obj.isInstancedMesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+    });
+    root.position.set(0, 0, -1.05);
+    root.scale.set(0.33, 0.33, 0.33);
+    scene.add(root);
+  },
+  undefined,
+  (err) => console.error('Failed to load scene.glb:', err)
 );
-portalScene.add(room);
 
-const pAmbient = new THREE.AmbientLight(0xffffff, 0.25);
-portalScene.add(pAmbient);
-
-const pPoint = new THREE.PointLight(0xff8855, 2.0, 20, 2.0);
-pPoint.position.set(1.2, 0.8, 1.4);
-portalScene.add(pPoint);
-
-// a few emissive “blobs”
-const blobMat = new THREE.MeshStandardMaterial({ color: 0x9a1be1, emissive: 0x6b10a6, emissiveIntensity: 0.8, roughness: 0.3, metalness: 0.1 });
-const blobMat2 = new THREE.MeshStandardMaterial({ color: 0xe19a1b, emissive: 0xa66b10, emissiveIntensity: 0.8, roughness: 0.3, metalness: 0.1 });
-const blobMat3 = new THREE.MeshStandardMaterial({ color: 0x1be19a, emissive: 0x10a66b, emissiveIntensity: 0.8, roughness: 0.3, metalness: 0.1 });
-
-const blobs = [
-  new THREE.Mesh(new THREE.SphereGeometry(0.35, 32, 16), blobMat),
-  new THREE.Mesh(new THREE.SphereGeometry(0.3,  32, 16), blobMat2),
-  new THREE.Mesh(new THREE.SphereGeometry(0.28, 32, 16), blobMat3),
-];
-blobs[0].position.set( 1.2,  0.9,  1.0);
-blobs[1].position.set(-1.0,  0.0, -0.2);
-blobs[2].position.set( 1.0, -1.1, -1.1);
-blobs.forEach(m => portalScene.add(m));
-
-// Apply the portal texture to your screen
-screen.material = new THREE.MeshPhysicalMaterial({
-  roughness: 0.95,
-  metalness: 0.0,
-  sheen: 1.0,
-  sheenRoughness: 0.9,
-  side: THREE.DoubleSide,
-  map: portalTarget.texture
-});
-
-// temp vectors to avoid GC
-const _screenWorldPos = new THREE.Vector3();
-
-// Puppets (kept as-is, just images on sticks)
+// Puppets
 const texLoader = new THREE.TextureLoader();
 const puppets = [];
+
 function makePuppet(textureUrl, phase, xOffset) {
   return new Promise((resolve, reject) => {
     texLoader.load(
       textureUrl,
       (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace;
+
         const aspect = tex.image.width / tex.image.height;
         const puppetH = 0.9;
         const puppetW = puppetH * aspect;
         const puppetGeo = new THREE.PlaneGeometry(puppetW, puppetH);
+
         const puppetMat = new THREE.MeshStandardMaterial({
           map: tex,
           transparent: true,
           alphaTest: 0.5,
           side: THREE.DoubleSide,
         });
+
         const p = new THREE.Mesh(puppetGeo, puppetMat);
         p.scale.set(0.1, 0.1, 0.1);
         p.position.set(xOffset, 0.01, constraints.baseZ);
         p.castShadow = true;
         p.userData.phase = phase;
 
+        // Stick
         const stickGeo = new THREE.CylinderGeometry(0.003, 0.003, 5, 12);
         const stickMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0.1 });
         const stick = new THREE.Mesh(stickGeo, stickMat);
@@ -368,6 +380,7 @@ function makePuppet(textureUrl, phase, xOffset) {
         stick.castShadow = true;
         p.add(stick);
 
+        // Twirl state
         p.userData.twirl = {
           active: false,
           t: 0,
@@ -406,11 +419,6 @@ function animate() {
 
   // Smoothly slerp the camera towards the target quat (gyro)
   camera.quaternion.slerp(targetQuat, gyroConfig.smoothing);
-
-  // Animate blobs in the portal scene
-  blobs[0].position.y =  0.9 + 0.25 * Math.sin(t * 1.7);
-  blobs[1].position.x = -1.0 + 0.22 * Math.cos(t * 1.1);
-  blobs[2].position.z = -1.1 + 0.28 * Math.sin(t * 1.4);
 
   // Light flicker
   const flicker = 0.5 + 0.5 * Math.abs(layeredNoise(t * 2.2));
@@ -470,61 +478,14 @@ function animate() {
   flame.target.position.copy(screen.position);
   flame.target.updateMatrixWorld();
 
-  // --- PORTAL RENDER STEP ---
-  // 1) Place portal cam at the viewer, orient like the screen plane
-  portalCam.position.copy(camera.position);
-  screen.getWorldQuaternion(portalCam.quaternion);
-
-  // 2) Compute screen plane in portalCam space
-  screen.getWorldPosition(_screenWorldPos);
-  portalCam.updateMatrixWorld();
-  const portalPosCamSpace = _screenWorldPos.clone().applyMatrix4(new THREE.Matrix4().copy(portalCam.matrixWorldInverse));
-
-  const near = portalCam.near; // same as main near (0.1)
-  const halfW = screenWidth * 0.5;
-  const halfH = screenHeight * 0.5;
-
-  const left   = portalPosCamSpace.x - halfW;
-  const right  = portalPosCamSpace.x + halfW;
-  const top    = portalPosCamSpace.y + halfH;
-  const bottom = portalPosCamSpace.y - halfH;
-
-  const dist   = Math.abs(portalPosCamSpace.z);
-  const scale  = near / Math.max(dist, 1e-4);
-
-  portalCam.projectionMatrix.makePerspective(
-    left   * scale,
-    right  * scale,
-    top    * scale,
-    bottom * scale,
-    near,
-    10
-  );
-
-  // 3) Render the portal scene to the target
-  renderer.setRenderTarget(portalTarget);
-  renderer.clear();
-  renderer.render(portalScene, portalCam);
-  renderer.setRenderTarget(null);
-
-  // 4) Render main scene
   renderer.render(scene, camera);
-
   requestAnimationFrame(animate);
 }
 
 // Resize
-function resizeRT() {
-  const dpr = renderer.getPixelRatio();
-  const w = Math.max(1, Math.floor(innerWidth * dpr));
-  const h = Math.max(1, Math.floor(innerHeight * dpr));
-  portalTarget.setSize(w, h);
-}
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  resizeRT();
 });
-// prime RT size
-resizeRT();
+
