@@ -483,8 +483,9 @@ function animate() {
 }
 
 // Resize
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
