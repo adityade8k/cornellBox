@@ -336,7 +336,7 @@ gltfLoader.load(
       }
     });
     root.position.set(0, 0, -1.05);
-    root.scale.set(0.4, 0.4, 0.4);
+    root.scale.set(0.25, 0.25, 0.25);
     scene.add(root);
   },
   undefined,
