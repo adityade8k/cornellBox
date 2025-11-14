@@ -2,147 +2,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-/* -------------------- Gyro overlay + sensors -------------------- */
-const overlayEl = document.getElementById('sensorOverlay');
-const permBtn = document.getElementById('sensorPermissionBtn');
-
-const data = {
-  orientation: { alpha: null, beta: null, gamma: null, absolute: null },
-  motion: {
-    acc: { x: null, y: null, z: null },
-    accG: { x: null, y: null, z: null },
-    rot: { alpha: null, beta: null, gamma: null },
-    interval: null
-  }
-};
-
-const fmt = (v, d = 2) => (v === null || v === undefined ? '—' : Number(v).toFixed(d));
-function renderOverlay() {
-  if (!overlayEl) return;
-  const o = data.orientation;
-  const m = data.motion;
-  overlayEl.textContent =
-`orientation:
-  alpha (z): ${fmt(o.alpha)}°
-  beta  (x): ${fmt(o.beta)}°
-  gamma (y): ${fmt(o.gamma)}°
-  absolute:  ${o.absolute === null ? '—' : o.absolute}
-
-motion:
-  acc (m/s²):      x=${fmt(m.acc.x)}  y=${fmt(m.acc.y)}  z=${fmt(m.acc.z)}
-  accG (m/s²):     x=${fmt(m.accG.x)} y=${fmt(m.accG.y)} z=${fmt(m.accG.z)}
-  rotRate (°/s):   a=${fmt(m.rot.alpha)} b=${fmt(m.rot.beta)} g=${fmt(m.rot.gamma)}
-  interval (ms):   ${fmt(m.interval, 0)}`;
-}
-
-function onMotion(e) {
-  const a = e.acceleration || {};
-  const ag = e.accelerationIncludingGravity || {};
-  const rr = e.rotationRate || {};
-  data.motion.acc.x = a.x; data.motion.acc.y = a.y; data.motion.acc.z = a.z;
-  data.motion.accG.x = ag.x; data.motion.accG.y = ag.y; data.motion.accG.z = ag.z;
-  data.motion.rot.alpha = rr.alpha; data.motion.rot.beta = rr.beta; data.motion.rot.gamma = rr.gamma;
-  data.motion.interval = e.interval;
-  renderOverlay();
-}
-
-/* -------------------- Three.js scene -------------------- */
+// ---------- Scene / Camera / Renderer ----------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111);
 
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
 camera.position.set(0, 0, -2);
 
-// keep this as the NEUTRAL camera orientation (phone upright)
-const baseQuat = camera.quaternion.clone();
-let targetQuat = baseQuat.clone();
-
-// Gyro → camera rotation config
-const gyroConfig = {
-  maxPitchDeg: 180,         // camera X (up/down)
-  maxYawDeg: 180,           // camera Y (left/right)
-  pitchTiltRangeDeg: 15,  // Δbeta to hit maxPitchDeg
-  yawTiltRangeDeg: 15,    // Δgamma to hit maxYawDeg
-  smoothing: 0.15         // slerp factor per frame
-};
-
-let haveBaseline = false;
-let beta0 = 0;   // neutral beta
-let gamma0 = 0;  // neutral gamma
-
-function updateTargetFromTilt(beta, gamma) {
-  const { maxPitchDeg, maxYawDeg, pitchTiltRangeDeg, yawTiltRangeDeg } = gyroConfig;
-  const dBeta = beta - beta0;
-  const dGamma = gamma - gamma0;
-
-  const pitchDeg = THREE.MathUtils.clamp((dBeta / pitchTiltRangeDeg) * maxPitchDeg, -maxPitchDeg, maxPitchDeg);
-  const yawDeg   = THREE.MathUtils.clamp((dGamma / yawTiltRangeDeg) * maxYawDeg, -maxYawDeg, maxYawDeg);
-  const pitch = THREE.MathUtils.degToRad(pitchDeg);
-  const yaw   = THREE.MathUtils.degToRad(yawDeg);
-
-  const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
-  const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-  targetQuat.copy(baseQuat).multiply(qy).multiply(qx);
-}
-
-function onOrientation(e) {
-  data.orientation.alpha = e.alpha;
-  data.orientation.beta = e.beta;
-  data.orientation.gamma = e.gamma;
-  data.orientation.absolute = e.absolute;
-
-  if (!haveBaseline && e.beta != null && e.gamma != null) {
-    beta0 = e.beta;
-    gamma0 = e.gamma;
-    haveBaseline = true;
-  }
-  if (haveBaseline) updateTargetFromTilt(e.beta ?? 0, e.gamma ?? 0);
-
-  renderOverlay();
-}
-
-// iOS 13+ permission dance
-async function ensurePermissionsIfNeeded() {
-  const isiOS13Plus =
-    typeof DeviceMotionEvent !== 'undefined' &&
-    typeof DeviceMotionEvent.requestPermission === 'function';
-
-  if (!isiOS13Plus) {
-    attachSensors();
-    return;
-  }
-
-  if (permBtn) permBtn.style.display = 'inline-block';
-  permBtn?.addEventListener('click', async () => {
-    try {
-      const pm = await DeviceMotionEvent.requestPermission();
-      const po = typeof DeviceOrientationEvent?.requestPermission === 'function'
-        ? await DeviceOrientationEvent.requestPermission()
-        : 'granted';
-
-      if (pm === 'granted' && po === 'granted') {
-        if (permBtn) permBtn.style.display = 'none';
-        attachSensors();
-      } else {
-        if (permBtn) permBtn.textContent = 'Motion Permission Denied';
-      }
-    } catch (err) {
-      if (permBtn) permBtn.textContent = 'Enable Motion Failed';
-      console.error(err);
-    }
-  }, { once: true });
-}
-
-function attachSensors() {
-  window.addEventListener('deviceorientation', onOrientation, true);
-  window.addEventListener('devicemotion', onMotion, true);
-  renderOverlay();
-}
-
-// Must be served over HTTPS (or localhost)
-ensurePermissionsIfNeeded();
-
-/* -------------------- Renderer & lights -------------------- */
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -152,7 +18,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.style.margin = '0';
 document.body.appendChild(renderer.domElement);
 
-// --- Cloth "screen" ---
+// ---------- Cloth "screen" ----------
 const screenWidth = 0.8;
 const screenHeight = 1.2;
 const screenGeo = new THREE.PlaneGeometry(screenWidth, screenHeight);
@@ -173,38 +39,37 @@ scene.add(screen);
 
 scene.add(new THREE.AmbientLight(0xffffff, 1));
 
-// --- Flame + Puppet Group ---
+// ---------- Flame + Puppet Group ----------
 const lightGroup = new THREE.Group();
 lightGroup.position.set(0, -0.2, 0);
 
-// --- SpotLight ---
+// SpotLight (flame)
 const flame = new THREE.SpotLight(0xffb27a, 6.0, 100.0, THREE.MathUtils.degToRad(30), 2, 2.5);
 flame.position.set(0, -0.12, -1);
 flame.castShadow = true;
 flame.shadow.mapSize.set(2048, 2048);
 flame.shadow.bias = -0.0001;
 flame.shadow.normalBias = 0.02;
-
 flame.shadow.camera.near = 0.01;
 flame.shadow.camera.far = 10;
 flame.shadow.camera.fov = 60;
 flame.shadow.camera.updateProjectionMatrix();
 
 const flameTarget = new THREE.Object3D();
-flameTarget.position.set(0, -0.1, 0);
+flameTarget.position.set(0, -0.1, 0); // aim at the cloth
 scene.add(flameTarget);
 flame.target = flameTarget;
-
 lightGroup.add(flame);
+
 scene.add(lightGroup);
 
-// Directional fill light
-const directionalLight = new THREE.DirectionalLight(0xffffff, 20);
-directionalLight.position.set(0, 0.1, -5);
-directionalLight.castShadow = true;
-scene.add(directionalLight);
+// Directional light (back light)
+let directionalLIght = new THREE.DirectionalLight(0xffffff, 20);
+directionalLIght.position.set(0, 0.1, -5);
+directionalLIght.castShadow = true;
+scene.add(directionalLIght);
 
-/* -------------------- Motion constraints & utilities -------------------- */
+// ---------- Puppet motion constraints (for their sway/twirl) ----------
 const constraints = {
   baseZ: -0.9,
   zMin: -1.18,
@@ -227,13 +92,16 @@ const constraints = {
   rz: 1.3,
 };
 
+// ---------- Utilities ----------
 const easeInOutSine = (u) => 0.5 - 0.5 * Math.cos(Math.PI * u);
 const randRange = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp = (a, b, t) => a + (b - a) * t;
 
-/* -------------------- Load scene.glb -------------------- */
+// ---------- Load background GLB ----------
 const gltfLoader = new GLTFLoader();
 gltfLoader.load(
-  '/models/scene.glb',
+  '/models/scene.glb', // ensure file exists at public/models/scene.glb
   (gltf) => {
     const root = gltf.scene || gltf.scenes[0];
     root.traverse((obj) => {
@@ -242,6 +110,7 @@ gltfLoader.load(
         obj.receiveShadow = true;
       }
     });
+    // Place it behind puppets (toward the light) so it doesn’t block shadows on the screen
     root.position.set(0, 0, -1.05);
     root.scale.set(0.4, 0.4, 0.4);
     scene.add(root);
@@ -250,13 +119,13 @@ gltfLoader.load(
   (err) => console.error('Failed to load scene.glb:', err)
 );
 
-/* -------------------- Puppets -------------------- */
-const texLoader = new THREE.TextureLoader();
+// ---------- Puppet factory (two puppets, different textures, random twirl) ----------
+const loader = new THREE.TextureLoader();
 const puppets = [];
 
 function makePuppet(textureUrl, phase, xOffset) {
   return new Promise((resolve, reject) => {
-    texLoader.load(
+    loader.load(
       textureUrl,
       (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace;
@@ -279,6 +148,7 @@ function makePuppet(textureUrl, phase, xOffset) {
         p.castShadow = true;
         p.userData.phase = phase;
 
+        // Stick
         const stickGeo = new THREE.CylinderGeometry(0.003, 0.003, 5, 12);
         const stickMat = new THREE.MeshStandardMaterial({
           color: 0xffffff,
@@ -290,6 +160,7 @@ function makePuppet(textureUrl, phase, xOffset) {
         stick.castShadow = true;
         p.add(stick);
 
+        // Twirl state
         p.userData.twirl = {
           active: false,
           t: 0,
@@ -309,26 +180,175 @@ function makePuppet(textureUrl, phase, xOffset) {
   });
 }
 
+// Create TWO puppets
 Promise.all([
   makePuppet('/textures/test.png', 0, -0.02),
   makePuppet('/textures/test1.png', Math.PI, 0.02),
 ]).then(() => {
   window.shadowPuppet = { constraints, puppets, lightGroup, flame, screen };
+  animate();
 }).catch((e) => console.error('Failed to create puppets:', e));
 
-/* -------------------- Animate -------------------- */
+// ---------- Light flicker function ----------
 function layeredNoise(t, a1=1, a2=0.5, a3=0.25, s1=1.7, s2=2.9, s3=4.7) {
   return a1 * Math.sin(t * s1) + a2 * Math.sin(t * s2 + 1.3) + a3 * Math.sin(t * s3 + 2.7);
 }
 
-let tSim = 0;
+// ---------- Gyro constraints / state ----------
+const gyroConstraints = {
+  enabled: true,
+
+  // base offsets (radians) to "center" the view
+  baseYaw: 0.0,    // rotates around Y (left/right)
+  basePitch: 0.0,  // rotates around X (up/down)
+
+  // axis options & sensitivity
+  invertX: false,  // invert left/right
+  invertY: false,  // invert up/down
+  sensitivityX: THREE.MathUtils.degToRad(0.8), // camera radians per 1° gamma
+  sensitivityY: THREE.MathUtils.degToRad(0.8), // camera radians per 1° beta
+
+  // clamps (radians)
+  minYaw:   THREE.MathUtils.degToRad(-60),
+  maxYaw:   THREE.MathUtils.degToRad( 60),
+  minPitch: THREE.MathUtils.degToRad(-40),
+  maxPitch: THREE.MathUtils.degToRad( 40),
+
+  // smoothing factor (0 = snappy, 1 = frozen)
+  smoothing: 0.18,
+
+  // deadzone (degrees)
+  deadzoneDegX: 1.0,
+  deadzoneDegY: 1.0,
+};
+
+const gyro = {
+  // raw deviceorientation (degrees)
+  alpha: 0, // z
+  beta:  0, // x (front/back tilt)
+  gamma: 0, // y (left/right tilt)
+
+  // derived camera targets (radians)
+  targetYaw: 0,
+  targetPitch: 0,
+
+  // smoothed camera angles (radians)
+  yaw: 0,
+  pitch: 0,
+
+  // screen orientation compensation
+  screenAngle: 0, // 0/90/180/270 in degrees
+  hasPermission: false,
+};
+
+// Screen orientation listener
+if (screen.orientation && typeof screen.orientation.addEventListener === 'function') {
+  screen.orientation.addEventListener('change', () => {
+    gyro.screenAngle = (screen.orientation && screen.orientation.angle) || 0;
+  });
+}
+gyro.screenAngle = (screen.orientation && screen.orientation.angle) || 0;
+
+// iOS permission flow + attach listener
+function requestGyroPermissionIfNeeded() {
+  const needsPerm = typeof DeviceOrientationEvent !== 'undefined' &&
+                    typeof DeviceOrientationEvent.requestPermission === 'function';
+
+  if (!needsPerm) {
+    gyro.hasPermission = true;
+    attachOrientationListener();
+    return;
+  }
+
+  // Simple button overlay for iOS
+  const btn = document.createElement('button');
+  btn.textContent = 'Enable Motion';
+  Object.assign(btn.style, {
+    position: 'fixed',
+    right: '16px',
+    bottom: '16px',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    border: '1px solid #999',
+    background: '#fff',
+    cursor: 'pointer',
+    zIndex: 9999
+  });
+  document.body.appendChild(btn);
+  btn.addEventListener('click', async () => {
+    try {
+      const res = await DeviceOrientationEvent.requestPermission();
+      if (res === 'granted') {
+        gyro.hasPermission = true;
+        attachOrientationListener();
+        btn.remove();
+      } else {
+        alert('Motion permission was not granted.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Motion permission request failed.');
+    }
+  });
+}
+
+function attachOrientationListener() {
+  window.addEventListener('deviceorientation', (e) => {
+    const { alpha, beta, gamma } = e;
+    if (alpha == null || beta == null || gamma == null) return;
+
+    gyro.alpha = alpha;
+    gyro.beta  = beta;
+    gyro.gamma = gamma;
+
+    // Map: gamma (L/R) -> yaw, beta (F/B) -> pitch
+    const g = Math.abs(gamma) > gyroConstraints.deadzoneDegX ? gamma : 0;
+    const b = Math.abs(beta)  > gyroConstraints.deadzoneDegY ? beta  : 0;
+
+    let yaw   = (g * gyroConstraints.sensitivityX) * (gyroConstraints.invertX ? -1 : 1);
+    let pitch = (b * gyroConstraints.sensitivityY) * (gyroConstraints.invertY ? -1 : 1);
+
+    // Compensate basic screen rotation
+    const sa = ((gyro.screenAngle % 360) + 360) % 360;
+    if (sa === 90) {
+      const tYaw = yaw;
+      yaw   = -pitch;
+      pitch =  tYaw;
+    } else if (sa === 270) {
+      const tYaw = yaw;
+      yaw   = pitch;
+      pitch = -tYaw;
+    } else if (sa === 180) {
+      yaw   = -yaw;
+      pitch = -pitch;
+    }
+
+    // Base offsets
+    yaw   += gyroConstraints.baseYaw;
+    pitch += gyroConstraints.basePitch;
+
+    // Clamp
+    gyro.targetYaw   = clamp(yaw,   gyroConstraints.minYaw,   gyroConstraints.maxYaw);
+    gyro.targetPitch = clamp(pitch, gyroConstraints.minPitch, gyroConstraints.maxPitch);
+  }, { passive: true });
+}
+
+// Kick off gyro
+requestGyroPermissionIfNeeded();
+
+// Expose for console tweaking if you want
+window.gyroConstraints = gyroConstraints;
+window.gyro = gyro;
+
+// ---------- Animation loop ----------
+let t = 0;
 function animate() {
-  tSim += 0.016 * constraints.speed;
+  t += 0.016 * constraints.speed;
 
   // Light flicker
-  const flicker = 0.5 + 0.5 * Math.abs(layeredNoise(tSim * 2.2));
-  const warmShift = 0.04 * layeredNoise(tSim * 1.3);
-  const sizeJitter = 0.15 * layeredNoise(tSim * 1.8);
+  const flicker = 0.5 + 0.5 * Math.abs(layeredNoise(t * 2.2));
+  const warmShift = 0.04 * layeredNoise(t * 1.3);
+  const sizeJitter = 0.15 * layeredNoise(t * 1.8);
 
   const baseIntensity = 5.0;
   flame.intensity = baseIntensity * (0.65 + 0.35 * flicker);
@@ -343,15 +363,18 @@ function animate() {
   // Puppet motion + twirl
   for (const p of puppets) {
     const ph = p.userData.phase || 0;
-    const x = constraints.ampX * Math.sin(tSim * constraints.sx + ph);
-    const y = constraints.ampY * Math.cos(tSim * constraints.sy + ph * 0.9);
-    const zRaw = constraints.baseZ + constraints.ampZ * Math.sin(tSim * constraints.sz + ph * 1.1);
+    const x = constraints.ampX * Math.sin(t * constraints.sx + ph);
+    const y = constraints.ampY * Math.cos(t * constraints.sy + ph * 0.9);
+    const zRaw = constraints.baseZ + constraints.ampZ * Math.sin(t * constraints.sz + ph * 1.1);
     const z = THREE.MathUtils.clamp(zRaw, constraints.zMin, constraints.zMax);
 
-    p.position.set(x, -0.05 + y, z);
-    p.rotation.x = constraints.rotX * Math.sin(tSim * constraints.rx + ph + Math.PI * 0.25);
-    const baseY = constraints.rotY * 0.3 * Math.sin(tSim * constraints.ry + ph);
-    p.rotation.z = constraints.rotZ * Math.sin(tSim * constraints.rz + ph + Math.PI * 0.5);
+    p.position.x = x;
+    p.position.y = -0.05 + y;
+    p.position.z = z;
+
+    p.rotation.x = constraints.rotX * Math.sin(t * constraints.rx + ph + Math.PI * 0.25);
+    const baseY = constraints.rotY * 0.3 * Math.sin(t * constraints.ry + ph);
+    p.rotation.z = constraints.rotZ * Math.sin(t * constraints.rz + ph + Math.PI * 0.5);
 
     const tw = p.userData.twirl;
     if (!tw.active) {
@@ -361,7 +384,7 @@ function animate() {
         tw.t = 0;
         tw.dur = randRange(0.35, 0.8);
         tw.from = p.rotation.y;
-        tw.to = p.rotation.y + Math.PI;
+        tw.to = p.rotation.y + Math.PI; // 180°
       }
     } else {
       tw.t += 0.016 * constraints.speed;
@@ -376,18 +399,28 @@ function animate() {
     p.rotation.y += baseY;
   }
 
+  // Keep light aimed at screen
   flame.target.position.copy(screen.position);
   flame.target.updateMatrixWorld();
 
-  // Apply gyro camera rotation
-  camera.quaternion.slerp(targetQuat, gyroConfig.smoothing);
+  // Gyro → Camera rotation
+  if (gyroConstraints.enabled && gyro.hasPermission) {
+    const k = clamp(1.0 - gyroConstraints.smoothing, 0.0, 1.0);
+    gyro.yaw   = lerp(gyro.yaw,   gyro.targetYaw,   k);
+    gyro.pitch = lerp(gyro.pitch, gyro.targetPitch, k);
+
+    // Yaw (Y axis) then Pitch (X axis)
+    const qYaw   = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), gyro.yaw);
+    const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), gyro.pitch);
+    const q = new THREE.Quaternion().multiplyQuaternions(qYaw, qPitch);
+    camera.quaternion.copy(q);
+  }
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
-animate();
 
-/* -------------------- Resize -------------------- */
+// ---------- Resize ----------
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
