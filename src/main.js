@@ -49,7 +49,7 @@ function onMotion(e) {
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111);
 
-const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 100);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
 // original camera pose (keep this as base)
 camera.position.set(0, 0, -2.2);
 // look at origin once to define the "original" camera orientation
@@ -59,8 +59,8 @@ let   targetQuat = baseQuat.clone();            // slerp target
 
 // Gyro → camera rotation mapping (X/Y only, relative to baseQuat)
 const gyroConfig = {
-  maxPitchDeg:  6,   // camera X rotation clamp
-  maxYawDeg:    10,  // camera Y rotation clamp
+  maxPitchDeg:  8,   // camera X rotation clamp
+  maxYawDeg:    8,  // camera Y rotation clamp
   pitchTiltRangeDeg: 20, // device beta delta to hit maxPitchDeg
   yawTiltRangeDeg:   20, // device gamma delta to hit maxYawDeg
   smoothing: 0.12         // slerp factor per frame (0..1)
