@@ -73,22 +73,22 @@ let gamma0 = 0; // neutral gamma
 function updateTargetFromTilt(beta, gamma) {
   const { maxPitchDeg, maxYawDeg, pitchTiltRangeDeg, yawTiltRangeDeg } = gyroConfig;
 
-  const dBeta  = beta  + beta0;  // front/back tilt delta
-  const dGamma = gamma + gamma0; // left/right tilt delta
+  const dBeta  = beta  - beta0;  // front/back tilt delta
+  const dGamma = gamma - gamma0; // left/right tilt delta
 
-  const pitchDeg = THREE.MathUtils.clamp((dBeta  / pitchTiltRangeDeg) * maxPitchDeg, -maxPitchDeg, maxPitchDeg);
-  const yawDeg   = THREE.MathUtils.clamp((dGamma / yawTiltRangeDeg)   * maxYawDeg,   -maxYawDeg,   maxYawDeg);
+  // Invert both pitch and yaw directions
+  const pitchDeg = -THREE.MathUtils.clamp((dBeta  / pitchTiltRangeDeg) * maxPitchDeg, -maxPitchDeg, maxPitchDeg);
+  const yawDeg   = -THREE.MathUtils.clamp((dGamma / yawTiltRangeDeg)   * maxYawDeg,   -maxYawDeg,   maxYawDeg);
 
   const pitch = THREE.MathUtils.degToRad(pitchDeg);
   const yaw   = THREE.MathUtils.degToRad(yawDeg);
 
-  // Only X then Y, relative to original camera orientation
   const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
   const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
 
-  // Note: order matters — yaw around world Y relative to base, then pitch around camera X
   targetQuat.copy(baseQuat).multiply(qy).multiply(qx);
 }
+
 
 function onOrientation(e) {
   data.orientation.alpha = e.alpha;
