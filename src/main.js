@@ -49,7 +49,7 @@ function onMotion(e) {
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111);
 
-const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 100);
 // original camera pose (keep this as base)
 camera.position.set(0, 0, -2.2);
 // look at origin once to define the "original" camera orientation
