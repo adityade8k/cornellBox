@@ -17,22 +17,7 @@ const data = {
 };
 
 const fmt = (v, d = 2) => (v === null || v === undefined ? '—' : Number(v).toFixed(d));
-function renderOverlay() {
-  const o = data.orientation;
-  const m = data.motion;
-  overlayEl.textContent =
-`orientation:
-  alpha (z): ${fmt(o.alpha)}°
-  beta  (x): ${fmt(o.beta)}°
-  gamma (y): ${fmt(o.gamma)}°
-  absolute : ${o.absolute === null ? '—' : o.absolute}
 
-motion:
-  acc  (m/s²):  x=${fmt(m.acc.x)}  y=${fmt(m.acc.y)}  z=${fmt(m.acc.z)}
-  accG (m/s²):  x=${fmt(m.accG.x)} y=${fmt(m.accG.y)} z=${fmt(m.accG.z)}
-  rotRate (°/s): a=${fmt(m.rot.alpha)} b=${fmt(m.rot.beta)} g=${fmt(m.rot.gamma)}
-  interval (ms): ${fmt(m.interval, 0)}`;
-}
 
 function onMotion(e) {
   const a  = e.acceleration || {};
@@ -42,7 +27,7 @@ function onMotion(e) {
   data.motion.accG.x = ag.x; data.motion.accG.y = ag.y; data.motion.accG.z = ag.z;
   data.motion.rot.alpha = rr.alpha; data.motion.rot.beta = rr.beta; data.motion.rot.gamma = rr.gamma;
   data.motion.interval  = e.interval;
-  renderOverlay();
+ 
 }
 
 // -------------------- Three.js scene --------------------
@@ -105,7 +90,7 @@ function onOrientation(e) {
   if (haveBaseline) {
     updateTargetFromTilt(e.beta ?? 0, e.gamma ?? 0);
   }
-  renderOverlay();
+ 
 }
 
 // iOS 13+ permissions
@@ -142,7 +127,6 @@ async function ensurePermissionsIfNeeded() {
 function attachSensors() {
   window.addEventListener('deviceorientation', onOrientation, true);
   window.addEventListener('devicemotion', onMotion, true);
-  renderOverlay();
 }
 
 // Must be served over HTTPS (or localhost)
@@ -157,6 +141,47 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.style.margin = '0';
 document.body.appendChild(renderer.domElement);
+
+// ----- Double-tap / double-click to toggle Fullscreen -----
+function isFullscreen() {
+  return document.fullscreenElement || document.webkitFullscreenElement;
+}
+
+async function requestFs(el) {
+  try {
+    if (el.requestFullscreen) return await el.requestFullscreen();
+    if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen(); // Safari
+  } catch (e) { console.warn('Fullscreen request failed:', e); }
+}
+
+async function exitFs() {
+  try {
+    if (document.exitFullscreen) return await document.exitFullscreen();
+    if (document.webkitExitFullscreen) return document.webkitExitFullscreen(); // Safari
+  } catch (e) { console.warn('Exit fullscreen failed:', e); }
+}
+
+async function toggleFullscreen() {
+  if (isFullscreen()) await exitFs();
+  else await requestFs(document.documentElement); // go fullscreen on entire page
+}
+
+// Mobile: double-tap (within 300ms)
+let _lastTap = 0;
+renderer.domElement.addEventListener('touchend', (e) => {
+  const now = Date.now();
+  if (now - _lastTap < 300) {
+    toggleFullscreen();
+    e.preventDefault();
+  }
+  _lastTap = now;
+}, { passive: true });
+
+// Desktop: double-click
+renderer.domElement.addEventListener('dblclick', (e) => {
+  toggleFullscreen();
+});
+
 
 // -------------------- Your scene objects (unchanged except controls removed) --------------------
 
