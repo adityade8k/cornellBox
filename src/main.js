@@ -59,8 +59,8 @@ let targetQuat = baseQuat.clone();
 
 // Gyro → camera rotation config
 const gyroConfig = {
-  maxPitchDeg: 2,         // camera X (up/down)
-  maxYawDeg: 2,           // camera Y (left/right)
+  maxPitchDeg: 180,         // camera X (up/down)
+  maxYawDeg: 180,           // camera Y (left/right)
   pitchTiltRangeDeg: 15,  // Δbeta to hit maxPitchDeg
   yawTiltRangeDeg: 15,    // Δgamma to hit maxYawDeg
   smoothing: 0.15         // slerp factor per frame
