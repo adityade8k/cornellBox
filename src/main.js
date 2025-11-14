@@ -49,7 +49,7 @@ function onMotion(e) {
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111);
 
-const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
 // original camera pose (keep this as base)
 camera.position.set(0, 0, -2);
 // look at origin once to define the "original" camera orientation
@@ -178,7 +178,7 @@ screen.receiveShadow = true;
 scene.add(screen);
 
 // Ambient
-scene.add(new THREE.AmbientLight(0xffffff, 1));
+scene.add(new THREE.AmbientLight(0xffffff, 0.1));
 
 // Flame + Puppet group
 const lightGroup = new THREE.Group();
@@ -203,11 +203,76 @@ flame.target = flameTarget;
 lightGroup.add(flame);
 scene.add(lightGroup);
 
-// Directional light (back light)
-let directionalLIght = new THREE.DirectionalLight(0xffffff, 20);
-directionalLIght.position.set(0, 0.1, -5);
-directionalLIght.castShadow = true;
-scene.add(directionalLIght);
+// --- Quad spotlights (UP / DOWN / LEFT / RIGHT) cloned from an existing SpotLight ---
+function createQuadSpotsFrom(baseSpot, offset = 0.6) {
+  const group = new THREE.Group();
+  // anchor at the same place as the base spot
+
+  // Helper: make a new spot that copies key settings from baseSpot
+  const makeSpot = () => {
+    const s = new THREE.SpotLight(
+      baseSpot.color.clone(),
+      0.02,
+      baseSpot.distance,
+      40,
+      baseSpot.penumbra,
+      baseSpot.decay
+    );
+    // s.castShadow = true;
+    // s.shadow.mapSize.copy(baseSpot.shadow.mapSize);
+    // s.shadow.bias = baseSpot.shadow.bias;
+    // s.shadow.normalBias = baseSpot.shadow.normalBias;
+    // s.shadow.camera.near = baseSpot.shadow.camera.near;
+    // s.shadow.camera.far = baseSpot.shadow.camera.far;
+    // s.shadow.camera.fov = baseSpot.shadow.camera.fov;
+    // s.shadow.camera.updateProjectionMatrix();
+    return s;
+  };
+
+  // Build 4 targets (local to the group) and 4 spots
+  const dirs = {
+    up:    new THREE.Vector3(0,  1, 0),
+    down:  new THREE.Vector3(0, -1, 0),
+    right: new THREE.Vector3(1,  0, 0),
+    left:  new THREE.Vector3(-1, 0, 0),
+  };
+
+  const targets = {};
+  Object.entries(dirs).forEach(([name, v]) => {
+    const t = new THREE.Object3D();
+    t.position.copy(v).multiplyScalar(offset); // local offset
+    group.add(t);
+    targets[name] = t;
+  });
+
+  const upSpot    = makeSpot();
+  const downSpot  = makeSpot();
+  const leftSpot  = makeSpot();
+  const rightSpot = makeSpot();
+
+  // All spots originate at group's origin (which sits at baseSpot.position)
+  upSpot.position.set(0, 0, 0);
+  downSpot.position.set(0, 0, 0);
+  leftSpot.position.set(0, 0, 0);
+  rightSpot.position.set(0, 0, 0);
+
+  upSpot.target    = targets.up;
+  downSpot.target  = targets.down;
+  leftSpot.target  = targets.left;
+  rightSpot.target = targets.right;
+
+  group.add(upSpot, downSpot, leftSpot, rightSpot);
+
+  // Convenience for external access/tweaks if you want
+  group.userData = { upSpot, downSpot, leftSpot, rightSpot, targets };
+  group.position.set(0, 0, -0.6);
+  return group;
+}
+
+// ----- Usage (add to the same parent you use for `flame`, e.g., lightGroup) -----
+const quadSpots = createQuadSpotsFrom(flame, /* offset */ 0.8);
+scene.add(quadSpots);
+
 
 // Motion constraints (unchanged)
 const constraints = {
