@@ -73,8 +73,8 @@ let gamma0 = 0; // neutral gamma
 function updateTargetFromTilt(beta, gamma) {
   const { maxPitchDeg, maxYawDeg, pitchTiltRangeDeg, yawTiltRangeDeg } = gyroConfig;
 
-  const dBeta  = beta  - beta0;  // front/back tilt delta
-  const dGamma = gamma - gamma0; // left/right tilt delta
+  const dBeta  = beta  + beta0;  // front/back tilt delta
+  const dGamma = gamma + gamma0; // left/right tilt delta
 
   const pitchDeg = THREE.MathUtils.clamp((dBeta  / pitchTiltRangeDeg) * maxPitchDeg, -maxPitchDeg, maxPitchDeg);
   const yawDeg   = THREE.MathUtils.clamp((dGamma / yawTiltRangeDeg)   * maxYawDeg,   -maxYawDeg,   maxYawDeg);
