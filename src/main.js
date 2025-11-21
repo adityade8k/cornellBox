@@ -2,9 +2,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-// -------------------- Gyro overlay & permissions --------------------
-const overlayEl = document.getElementById('sensorOverlay');
-const permBtn   = document.getElementById('sensorPermissionBtn');
+// -------------------- Motion permissions (no overlay) --------------------
+const permBtn = document.getElementById('sensorPermissionBtn');
 
 const data = {
   orientation: { alpha: null, beta: null, gamma: null, absolute: null },
@@ -16,8 +15,8 @@ const data = {
   }
 };
 
-const fmt = (v, d = 2) => (v === null || v === undefined ? '—' : Number(v).toFixed(d));
-
+// No-op (overlay removed)
+function renderOverlay() {}
 
 function onMotion(e) {
   const a  = e.acceleration || {};
@@ -27,17 +26,16 @@ function onMotion(e) {
   data.motion.accG.x = ag.x; data.motion.accG.y = ag.y; data.motion.accG.z = ag.z;
   data.motion.rot.alpha = rr.alpha; data.motion.rot.beta = rr.beta; data.motion.rot.gamma = rr.gamma;
   data.motion.interval  = e.interval;
- 
+  renderOverlay();
 }
 
 // -------------------- Three.js scene --------------------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111);
 
-const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
 // original camera pose (keep this as base)
 camera.position.set(0, 0, -2.2);
-// look at origin once to define the "original" camera orientation
 camera.lookAt(0, 0, 0);
 const baseQuat   = camera.quaternion.clone();   // store original
 let   targetQuat = baseQuat.clone();            // slerp target
@@ -45,7 +43,7 @@ let   targetQuat = baseQuat.clone();            // slerp target
 // Gyro → camera rotation mapping (X/Y only, relative to baseQuat)
 const gyroConfig = {
   maxPitchDeg:  8,   // camera X rotation clamp
-  maxYawDeg:    8,  // camera Y rotation clamp
+  maxYawDeg:    8,   // camera Y rotation clamp
   pitchTiltRangeDeg: 20, // device beta delta to hit maxPitchDeg
   yawTiltRangeDeg:   20, // device gamma delta to hit maxYawDeg
   smoothing: 0.12         // slerp factor per frame (0..1)
@@ -61,19 +59,18 @@ function updateTargetFromTilt(beta, gamma) {
   const dBeta  = beta  - beta0;  // front/back tilt delta
   const dGamma = gamma - gamma0; // left/right tilt delta
 
-  // Invert both pitch and yaw directions
+  // Invert both pitch and yaw directions (tilt left → yaw right; tilt forward → pitch up)
   const pitchDeg = -THREE.MathUtils.clamp((dBeta  / pitchTiltRangeDeg) * maxPitchDeg, -maxPitchDeg, maxPitchDeg);
   const yawDeg   = -THREE.MathUtils.clamp((dGamma / yawTiltRangeDeg)   * maxYawDeg,   -maxYawDeg,   maxYawDeg);
 
   const pitch = THREE.MathUtils.degToRad(pitchDeg);
   const yaw   = THREE.MathUtils.degToRad(yawDeg);
 
-  const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -pitch);
-  const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
+  const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
+  const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
 
   targetQuat.copy(baseQuat).multiply(qy).multiply(qx);
 }
-
 
 function onOrientation(e) {
   data.orientation.alpha = e.alpha;
@@ -82,7 +79,6 @@ function onOrientation(e) {
   data.orientation.absolute = e.absolute;
 
   if (!haveBaseline && e.beta != null && e.gamma != null) {
-    // capture neutral offsets when device first reports (user's current hold = "center")
     beta0  = e.beta;
     gamma0 = e.gamma;
     haveBaseline = true;
@@ -90,7 +86,7 @@ function onOrientation(e) {
   if (haveBaseline) {
     updateTargetFromTilt(e.beta ?? 0, e.gamma ?? 0);
   }
- 
+  renderOverlay();
 }
 
 // iOS 13+ permissions
@@ -127,6 +123,7 @@ async function ensurePermissionsIfNeeded() {
 function attachSensors() {
   window.addEventListener('deviceorientation', onOrientation, true);
   window.addEventListener('devicemotion', onMotion, true);
+  renderOverlay();
 }
 
 // Must be served over HTTPS (or localhost)
@@ -134,8 +131,8 @@ ensurePermissionsIfNeeded();
 
 // -------------------- Renderer & shadows --------------------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -146,26 +143,22 @@ document.body.appendChild(renderer.domElement);
 function isFullscreen() {
   return document.fullscreenElement || document.webkitFullscreenElement;
 }
-
 async function requestFs(el) {
   try {
     if (el.requestFullscreen) return await el.requestFullscreen();
     if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen(); // Safari
   } catch (e) { console.warn('Fullscreen request failed:', e); }
 }
-
 async function exitFs() {
   try {
     if (document.exitFullscreen) return await document.exitFullscreen();
     if (document.webkitExitFullscreen) return document.webkitExitFullscreen(); // Safari
   } catch (e) { console.warn('Exit fullscreen failed:', e); }
 }
-
 async function toggleFullscreen() {
   if (isFullscreen()) await exitFs();
-  else await requestFs(document.documentElement); // go fullscreen on entire page
+  else await requestFs(document.documentElement); // fullscreen entire page
 }
-
 // Mobile: double-tap (within 300ms)
 let _lastTap = 0;
 renderer.domElement.addEventListener('touchend', (e) => {
@@ -176,14 +169,12 @@ renderer.domElement.addEventListener('touchend', (e) => {
   }
   _lastTap = now;
 }, { passive: true });
-
 // Desktop: double-click
-renderer.domElement.addEventListener('dblclick', (e) => {
+renderer.domElement.addEventListener('dblclick', () => {
   toggleFullscreen();
 });
 
-
-// -------------------- Your scene objects (unchanged except controls removed) --------------------
+// -------------------- Scene objects --------------------
 
 // Cloth "screen"
 const screenWidth = 0.8;
@@ -228,33 +219,22 @@ flame.target = flameTarget;
 lightGroup.add(flame);
 scene.add(lightGroup);
 
-// --- Quad spotlights (UP / DOWN / LEFT / RIGHT) cloned from an existing SpotLight ---
+// --- Quad spotlights (UP / DOWN / LEFT / RIGHT) cloned from existing SpotLight ---
 function createQuadSpotsFrom(baseSpot, offset = 0.6) {
   const group = new THREE.Group();
-  // anchor at the same place as the base spot
 
-  // Helper: make a new spot that copies key settings from baseSpot
   const makeSpot = () => {
     const s = new THREE.SpotLight(
       baseSpot.color.clone(),
-      0.02,
+      0.02, // gentle accent
       baseSpot.distance,
       40,
       baseSpot.penumbra,
       baseSpot.decay
     );
-    // s.castShadow = true;
-    // s.shadow.mapSize.copy(baseSpot.shadow.mapSize);
-    // s.shadow.bias = baseSpot.shadow.bias;
-    // s.shadow.normalBias = baseSpot.shadow.normalBias;
-    // s.shadow.camera.near = baseSpot.shadow.camera.near;
-    // s.shadow.camera.far = baseSpot.shadow.camera.far;
-    // s.shadow.camera.fov = baseSpot.shadow.camera.fov;
-    // s.shadow.camera.updateProjectionMatrix();
     return s;
   };
 
-  // Build 4 targets (local to the group) and 4 spots
   const dirs = {
     up:    new THREE.Vector3(0,  1, 0),
     down:  new THREE.Vector3(0, -1, 0),
@@ -265,7 +245,7 @@ function createQuadSpotsFrom(baseSpot, offset = 0.6) {
   const targets = {};
   Object.entries(dirs).forEach(([name, v]) => {
     const t = new THREE.Object3D();
-    t.position.copy(v).multiplyScalar(offset); // local offset
+    t.position.copy(v).multiplyScalar(offset);
     group.add(t);
     targets[name] = t;
   });
@@ -275,7 +255,6 @@ function createQuadSpotsFrom(baseSpot, offset = 0.6) {
   const leftSpot  = makeSpot();
   const rightSpot = makeSpot();
 
-  // All spots originate at group's origin (which sits at baseSpot.position)
   upSpot.position.set(0, 0, 0);
   downSpot.position.set(0, 0, 0);
   leftSpot.position.set(0, 0, 0);
@@ -287,43 +266,15 @@ function createQuadSpotsFrom(baseSpot, offset = 0.6) {
   rightSpot.target = targets.right;
 
   group.add(upSpot, downSpot, leftSpot, rightSpot);
-
-  // Convenience for external access/tweaks if you want
   group.userData = { upSpot, downSpot, leftSpot, rightSpot, targets };
   group.position.set(0, 0, -0.6);
   return group;
 }
 
-// ----- Usage (add to the same parent you use for `flame`, e.g., lightGroup) -----
 const quadSpots = createQuadSpotsFrom(flame, /* offset */ 0.8);
 scene.add(quadSpots);
 
-
-// Motion constraints (unchanged)
-const constraints = {
-  baseZ: -0.9,
-  zMin: -1.18,
-  zMax: -0.6,
-  ampX: 0.04,
-  ampY: 0.04,
-  ampZ: 0.0,
-  rotX: THREE.MathUtils.degToRad(8),
-  rotY: THREE.MathUtils.degToRad(14),
-  rotZ: THREE.MathUtils.degToRad(10),
-  speed: 0.6,
-  sx: 1.0,
-  sy: 1.3,
-  sz: 0.8,
-  rx: 1.1,
-  ry: 0.9,
-  rz: 1.3,
-};
-
-// Utilities
-const easeInOutSine = (u) => 0.5 - 0.5 * Math.cos(Math.PI * u);
-const randRange = (a, b) => a + Math.random() * (b - a);
-
-// Load GLB
+// -------------------- Assets --------------------
 const gltfLoader = new GLTFLoader();
 gltfLoader.load(
   '/models/scene.glb',
@@ -336,7 +287,7 @@ gltfLoader.load(
       }
     });
     root.position.set(0, 0, -1.05);
-    root.scale.set(0.33, 0.33, 0.33);
+    root.scale.set(0.4, 0.4, 0.4);
     scene.add(root);
   },
   undefined,
@@ -368,11 +319,10 @@ function makePuppet(textureUrl, phase, xOffset) {
 
         const p = new THREE.Mesh(puppetGeo, puppetMat);
         p.scale.set(0.1, 0.1, 0.1);
-        p.position.set(xOffset, 0.01, constraints.baseZ);
+        p.position.set(xOffset, 0.01, -0.9);
         p.castShadow = true;
         p.userData.phase = phase;
 
-        // Stick
         const stickGeo = new THREE.CylinderGeometry(0.003, 0.003, 5, 12);
         const stickMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0.1 });
         const stick = new THREE.Mesh(stickGeo, stickMat);
@@ -380,14 +330,13 @@ function makePuppet(textureUrl, phase, xOffset) {
         stick.castShadow = true;
         p.add(stick);
 
-        // Twirl state
         p.userData.twirl = {
           active: false,
           t: 0,
           dur: 0.5,
           from: 0,
           to: 0,
-          nextTime: randRange(1.5, 4.0),
+          nextTime: 1.5 + Math.random() * 2.5,
         };
 
         lightGroup.add(p);
@@ -404,18 +353,18 @@ Promise.all([
   makePuppet('/textures/test.png', 0, -0.02),
   makePuppet('/textures/test1.png', Math.PI, 0.02),
 ]).then(() => {
-  window.shadowPuppet = { constraints, puppets, lightGroup, flame, screen, gyroConfig };
+  window.shadowPuppet = { puppets, lightGroup, flame, screen, gyroConfig };
   animate();
 }).catch((e) => console.error('Failed to create puppets:', e));
 
-// Flicker
+// -------------------- Animate --------------------
 function layeredNoise(t, a1=1, a2=0.5, a3=0.25, s1=1.7, s2=2.9, s3=4.7) {
   return a1 * Math.sin(t * s1) + a2 * Math.sin(t * s2 + 1.3) + a3 * Math.sin(t * s3 + 2.7);
 }
 
 let t = 0;
 function animate() {
-  t += 0.016 * constraints.speed;
+  t += 0.01;
 
   // Smoothly slerp the camera towards the target quat (gyro)
   camera.quaternion.slerp(targetQuat, gyroConfig.smoothing);
@@ -438,37 +387,35 @@ function animate() {
   // Puppet motion + twirl
   for (const p of puppets) {
     const ph = p.userData.phase || 0;
-    const x = constraints.ampX * Math.sin(t * constraints.sx + ph);
-    const y = constraints.ampY * Math.cos(t * constraints.sy + ph * 0.9);
-    const zRaw = constraints.baseZ + constraints.ampZ * Math.sin(t * constraints.sz + ph * 1.1);
-    const z = THREE.MathUtils.clamp(zRaw, constraints.zMin, constraints.zMax);
+    const x = 0.04 * Math.sin(t * 1.0 + ph);
+    const y = 0.04 * Math.cos(t * 1.3 + ph * 0.9);
+    const zRaw = -0.9 + 0.0 * Math.sin(t * 0.8 + ph * 1.1);
+    const z = THREE.MathUtils.clamp(zRaw, -1.18, -0.6);
 
-    p.position.x = x;
-    p.position.y = -0.05 + y;
-    p.position.z = z;
+    p.position.set(x, -0.05 + y, z);
 
-    p.rotation.x = constraints.rotX * Math.sin(t * constraints.rx + ph + Math.PI * 0.25);
-    const baseY  = constraints.rotY * 0.3 * Math.sin(t * constraints.ry + ph);
-    p.rotation.z = constraints.rotZ * Math.sin(t * constraints.rz + ph + Math.PI * 0.5);
+    p.rotation.x = THREE.MathUtils.degToRad(8)  * Math.sin(t * 1.1 + ph + Math.PI * 0.25);
+    const baseY  = THREE.MathUtils.degToRad(14) * 0.3 * Math.sin(t * 0.9 + ph);
+    p.rotation.z = THREE.MathUtils.degToRad(10) * Math.sin(t * 1.3 + ph + Math.PI * 0.5);
 
     const tw = p.userData.twirl;
     if (!tw.active) {
-      tw.nextTime -= 0.016 * constraints.speed;
+      tw.nextTime -= 0.016;
       if (tw.nextTime <= 0) {
         tw.active = true;
         tw.t = 0;
-        tw.dur = randRange(0.35, 0.8);
+        tw.dur = 0.35 + Math.random() * 0.45;
         tw.from = p.rotation.y;
-        tw.to   = p.rotation.y + Math.PI; // 180°
+        tw.to   = p.rotation.y + Math.PI;
       }
     } else {
-      tw.t += 0.016 * constraints.speed;
+      tw.t += 0.016;
       const u = THREE.MathUtils.clamp(tw.t / tw.dur, 0, 1);
-      const k = easeInOutSine(u);
+      const k = 0.5 - 0.5 * Math.cos(Math.PI * u);
       p.rotation.y = THREE.MathUtils.lerp(tw.from, tw.to, k);
       if (u >= 1) {
         tw.active = false;
-        tw.nextTime = randRange(1.2, 4.0);
+        tw.nextTime = 1.2 + Math.random() * 2.8;
       }
     }
     p.rotation.y += baseY;
@@ -482,10 +429,9 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
-// Resize
+// -------------------- Resize --------------------
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
-

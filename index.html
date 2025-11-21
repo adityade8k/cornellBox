@@ -6,20 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>cornellbox</title>
     <style>
-      #sensorOverlay {
-        position: fixed;
-        top: 12px;
-        left: 12px;
-        z-index: 9999;
-        background: rgba(0, 0, 0, 0.65);
-        color: #e8e8e8;
-        font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-        padding: 10px 12px;
-        border-radius: 8px;
-        pointer-events: none;
-        white-space: pre;
-        max-width: 90vw;
+      html, body {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #111;
       }
+      canvas { display: block; }
+      /* iOS permission button */
       #sensorPermissionBtn {
         position: fixed;
         top: 12px;
@@ -31,16 +26,13 @@
         background: #1a73e8;
         color: #fff;
         font: 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto;
-        display: none; /* shown on iOS if needed */
+        display: none; /* shown on iOS when needed */
         cursor: pointer;
       }
     </style>
   </head>
   <body>
-    <div id="app"></div>
-
-    <!-- Sensor overlay + (iOS) permission button -->
-    <!-- <div id="sensorOverlay">orientation: (waiting…)</div> -->
+    <!-- iOS motion permission button (shown only when needed) -->
     <button id="sensorPermissionBtn">Enable Motion Sensors</button>
 
     <script type="module" src="/src/main.js"></script>
